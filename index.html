@@ -1,4 +1,3 @@
-```html
 <!doctype html>
 <html lang="vi">
 <head>
@@ -134,7 +133,7 @@
 
 <script>
   // ==== CONFIG ====
-  const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyB5_DaVzmWpc6sLBJbnUcMY0B55xdQfSEAwRB-M7lxm5jkDEwK14ZAP5rtBWYWrSap/exec"; // ví dụ: https://script.google.com/macros/s/XXXX/exec
+  const WEBHOOK_URL = "https://f6144fbcb10e.ngrok-free.app/webhook/portal/submit";
   // ================
 
   let idToken = null;
@@ -175,17 +174,21 @@
   function initYearSelector(){
     const yearSelect = document.getElementById('yearSelect');
     const currentYear = new Date().getFullYear();
-
+    
+    // Tạo options từ năm hiện tại - 2 đến năm hiện tại + 2
     for(let y = currentYear - 2; y <= currentYear + 2; y++){
       const opt = document.createElement('option');
-      opt.value = y; opt.textContent = `Năm ${y}`;
+      opt.value = y;
+      opt.textContent = `Năm ${y}`;
       if(y === currentYear) opt.selected = true;
       yearSelect.appendChild(opt);
     }
 
+    // Set month selector to current month
     const monthSelect = document.getElementById('monthSelect');
     monthSelect.value = new Date().getMonth();
 
+    // Add event listeners
     monthSelect.addEventListener('change', onMonthYearChange);
     yearSelect.addEventListener('change', onMonthYearChange);
   }
@@ -194,7 +197,7 @@
     const month = parseInt(document.getElementById('monthSelect').value);
     const year = parseInt(document.getElementById('yearSelect').value);
     currentDate2 = new Date(year, month, 1);
-    selectedDates2 = [];
+    selectedDates2 = []; // Clear selections when changing month
     renderCalendar2();
   }
 
@@ -203,6 +206,7 @@
     const year = currentDate2.getFullYear();
     const month = currentDate2.getMonth();
 
+    // Update selectors to match current date
     document.getElementById('monthSelect').value = month;
     document.getElementById('yearSelect').value = year;
 
@@ -217,32 +221,43 @@
     const daysInPrevMonth = new Date(year, month, 0).getDate();
 
     let html = '';
-
+    
+    // Previous month days
     for(let i = firstDay - 1; i >= 0; i--){
-      html += `<div class="calendar-day other-month">${daysInPrevMonth - i}</div>`;
+      const d = daysInPrevMonth - i;
+      html += `<div class="calendar-day other-month">${d}</div>`;
     }
-
+    
+    // Current month days
     for(let d=1; d<=daysInMonth; d++){
       const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
       const selected = selectedDates2.includes(dateStr) ? 'selected':'';
       html += `<div class="calendar-day ${selected}" data-date="${dateStr}">${d}</div>`;
     }
-
+    
+    // Next month days to fill the grid
     const totalCells = Math.ceil((firstDay + daysInMonth)/7)*7;
     const remain = totalCells - (firstDay + daysInMonth);
     for(let d=1; d<=remain; d++){
       html += `<div class="calendar-day other-month">${d}</div>`;
     }
-
+    
     document.getElementById('calendar2').innerHTML = html;
 
+    // Add click handlers only to current month days
     document.querySelectorAll('#calendar2 .calendar-day').forEach(el=>{
       if(el.classList.contains('other-month')) return;
       el.addEventListener('click', ()=>{
         const date = el.getAttribute('data-date');
         const idx = selectedDates2.indexOf(date);
-        if(idx>=0){ selectedDates2.splice(idx,1); el.classList.remove('selected'); }
-        else { selectedDates2.push(date); el.classList.add('selected'); }
+        if(idx>=0){ 
+          selectedDates2.splice(idx,1); 
+          el.classList.remove('selected'); 
+        }
+        else { 
+          selectedDates2.push(date); 
+          el.classList.add('selected'); 
+        }
         updateSelectedDatesDisplay2();
       });
     });
@@ -251,29 +266,27 @@
 
   function updateSelectedDatesDisplay2(){
     const box = document.getElementById('selectedDates2');
-    if(selectedDates2.length===0){ box.textContent = 'Chưa chọn ngày nào'; return; }
+    if(selectedDates2.length===0){ 
+      box.textContent = 'Chưa chọn ngày nào'; 
+      return; 
+    }
     const s = selectedDates2.slice().sort().map(dt=>{
-      const [y,m,d] = dt.split('-'); return `<span>${d}/${m}/${y}</span>`;
+      const [y,m,d] = dt.split('-'); 
+      return `<span>${d}/${m}/${y}</span>`;
     }).join(' ');
     box.innerHTML = `Đã chọn: ${s}`;
   }
 
-  // ====== Apps Script fetch ======
-  async function postToAppsScript(payload, file){
+  // ====== helpers ======
+  async function postToWebhook(payload, file){
     const fd = new FormData();
     fd.append('id_token', idToken);
     fd.append('employeeId', userEmail);
     Object.entries(payload).forEach(([k,v])=> fd.append(k, v ?? ''));
     if(file){ fd.append('photo', file, file.name); }
-
-    const res = await fetch(WEBHOOK_URL, { method:'POST', body: fd, mode:'cors' });
-    let data = null;
-    try{ data = await res.json(); } catch(e){ /* nếu server không trả JSON thì quăng lỗi text */ }
-    if(!res.ok || (data && data.status==='error')){
-      const msg = (data && data.message) || (await res.text()) || res.statusText;
-      throw new Error(msg);
-    }
-    return data || { status:'ok' };
+    const res = await fetch(WEBHOOK_URL, { method:'POST', body: fd });
+    if(!res.ok){ throw new Error(await res.text() || res.statusText); }
+    return res;
   }
 
   // 1) Shift register
@@ -283,12 +296,18 @@
     const el = document.getElementById('msg1');
     const btn = document.getElementById('send1');
     if(!date){ el.innerHTML = '<span class="err">Chọn ngày trực</span>'; return; }
-    btn.disabled = true; btn.textContent = '⏳ Đang xử lý...';
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ Đang xử lý...';
     try{
-      await postToAppsScript({ action:'shift', shiftDate:date, shiftType:'Day', note });
+      await postToWebhook({ action:'shift', shiftDate:date, shiftType:'Day', note });
       el.innerHTML = '<span class="ok">✅ Đăng ký lịch trực thành công</span>';
-    }catch(e){ el.innerHTML = '<span class="err">❌ '+ e.message +'</span>'; }
-    finally{ btn.disabled = false; btn.textContent = 'Đăng ký lịch trực'; }
+    }catch(e){ 
+      el.innerHTML = '<span class="err">❌ ' + e.message + '</span>'; 
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Đăng ký lịch trực';
+    }
   };
 
   // 2) Attendance
@@ -297,13 +316,25 @@
     const el = document.getElementById('msg2');
     const btn = document.getElementById('send2');
     if(selectedDates2.length === 0){ el.innerHTML = '<span class="err">Chọn ít nhất một ngày</span>'; return; }
-    btn.disabled = true; btn.textContent = '⏳ Đang xử lý...';
-    try{
-      await postToAppsScript({ action:'attendance', dates: selectedDates2.join(','), note });
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ Đang xử lý...';
+    try {
+      const datesString = selectedDates2.join(',');
+      await postToWebhook({
+        action: 'attendance',
+        dates: datesString,
+        note: note
+      });
       el.innerHTML = `<span class="ok">✅ Chấm công thành công cho ${selectedDates2.length} ngày</span>`;
-      selectedDates2 = []; renderCalendar2();
-    }catch(e){ el.innerHTML = '<span class="err">❌ ' + e.message + '</span>'; }
-    finally{ btn.disabled = false; btn.textContent = 'Ghi nhận chấm công'; }
+      selectedDates2 = [];
+      renderCalendar2();
+    } catch (e) {
+      el.innerHTML = `<span class="err">❌ ${e.message}</span>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Ghi nhận chấm công';
+    }
   };
 
   // 3) OT
@@ -317,12 +348,18 @@
     const btn = document.getElementById('send3');
     if(!date || !start || !end || !photo){ el.innerHTML = '<span class="err">Nhập đủ thông tin & ảnh</span>'; return; }
     if(start>=end){ el.innerHTML = '<span class="err">Bắt đầu phải nhỏ hơn kết thúc</span>'; return; }
-    btn.disabled = true; btn.textContent = '⏳ Đang xử lý...';
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ Đang xử lý...';
     try{
-      await postToAppsScript({ action:'ot', date, start, end, reason: note }, photo);
+      await postToWebhook({ action:'ot', date, start, end, reason: note }, photo);
       el.innerHTML = '<span class="ok">✅ Ghi nhận làm thêm thành công</span>';
-    }catch(e){ el.innerHTML = '<span class="err">❌ ' + e.message + '</span>'; }
-    finally{ btn.disabled = false; btn.textContent = 'Ghi nhận làm thêm'; }
+    }catch(e){ 
+      el.innerHTML = '<span class="err">❌ ' + e.message + '</span>'; 
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Ghi nhận làm thêm';
+    }
   };
 </script>
 </body>
